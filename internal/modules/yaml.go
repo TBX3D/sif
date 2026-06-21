@@ -110,6 +110,11 @@ func ParseYAMLModule(path string) (*YAMLModule, error) {
 			return nil, fmt.Errorf("module %q: %w", ym.ID, err)
 		}
 	}
+	if ym.DNS != nil {
+		if err := validateDNS(ym.DNS); err != nil {
+			return nil, fmt.Errorf("module %q: %w", ym.ID, err)
+		}
+	}
 	var matchers []Matcher
 	switch {
 	case ym.HTTP != nil:
