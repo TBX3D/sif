@@ -518,3 +518,585 @@ func TestDetectorRegistry(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectFramework_GinFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body>Welcome</body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Gin" {
+		t.Errorf("false positive: detected Gin (confidence %.2f) on a CORS header", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Gin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		w.Write([]byte(`404 page not found - powered by gin-gonic`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "Gin" {
+		t.Errorf("expected framework 'Gin', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_MeteorFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><p>a meteor shower lit the sky while
+		meteorology students tracked the meteorite.</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Meteor" {
+		t.Errorf("false positive: detected Meteor (confidence %.2f) on prose about meteors", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Meteor(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><head>
+		<script>__meteor_runtime_config__ = JSON.parse(decodeURIComponent("%7B%7D"));</script>
+		</head><body><div id="app"></div></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "Meteor" {
+		t.Errorf("expected framework 'Meteor', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_BackboneFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><p>our team is the backbone of the
+		company, the backbone network that keeps everything running.</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Backbone.js" {
+		t.Errorf("false positive: detected Backbone.js (confidence %.2f) on prose about backbones", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Backbone(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><head><script src="/js/backbone.js"></script></head>
+		<body><script>var AppView = Backbone.View.extend({});</script></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "Backbone.js" {
+		t.Errorf("expected framework 'Backbone.js', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_CakePHPFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><p>our cupcake and cheesecake recipes,
+		plus the best pancake stack in town.</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "CakePHP" {
+		t.Errorf("false positive: detected CakePHP (confidence %.2f) on prose about cakes", result.Confidence)
+	}
+}
+
+func TestDetectFramework_CakePHP(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Set-Cookie", "CAKEPHP=abc123; path=/")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body>Home</body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "CakePHP" {
+		t.Errorf("expected framework 'CakePHP', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_SvelteFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><p>the model cut a svelte figure on
+		the runway.</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Svelte" {
+		t.Errorf("false positive: detected Svelte (confidence %.2f) on prose with 'svelte'", result.Confidence)
+	}
+}
+
+func TestDetectFramework_StrapiFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><script>fetch("/api/v1/users")</script></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Strapi" {
+		t.Errorf("false positive: detected Strapi (confidence %.2f) on a plain /api/ path", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Strapi(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><div>powered by strapi</div></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "Strapi" {
+		t.Errorf("expected framework 'Strapi', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_Ember(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><head><title>Ember App</title></head>
+		<body class="ember-application"><div id="ember123" class="ember-view">Content</div>
+		<script src="/assets/vendor.js"></script></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil || result.Name != "Ember.js" {
+		t.Errorf("expected framework 'Ember.js', got '%v'", result)
+	}
+}
+
+func TestDetectFramework_EmberFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><head><title>Day of the Dead</title></head>
+		<body><p>a celebratory holiday to remember the dead; families remember departed
+		members every November and September.</p></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Ember.js" {
+		t.Errorf("false positive: detected Ember.js (confidence %.2f) on prose with 'remember'", result.Confidence)
+	}
+}
+
+func TestDetectFramework_AdonisJS(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Set-Cookie", "adonis-session=s%3Aabc.def; Path=/; HttpOnly")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body>Welcome</body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "AdonisJS" {
+		t.Errorf("expected framework 'AdonisJS', got '%s'", result.Name)
+	}
+}
+
+// a cosmetics brand page that merely contains "adonis" in its markup (CSS
+// classes, asset paths, links) must not be fingerprinted as AdonisJS, as the
+// old bare "adonis" substring signature did.
+func TestDetectFramework_AdonisFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<title>Adonis Cosmetics</title>
+				<link rel="stylesheet" href="/assets/adonis-theme.css">
+			</head>
+			<body class="adonis-store">
+				<h1>Adonis Cosmetics</h1>
+				<a href="/adonis/collections">Shop the adonis collection</a>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "AdonisJS" {
+		t.Errorf("false positive: plain page mentioning 'Adonis' detected as AdonisJS (%.2f)", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Phoenix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><title>Phoenix App</title></head>
+			<body>
+				<div data-phx-main data-phx-session="abc" data-phx-static="def" id="phx-F1a2B3">
+					<span>Content</span>
+				</div>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "Phoenix" {
+		t.Errorf("expected framework 'Phoenix', got '%s'", result.Name)
+	}
+}
+
+// a Phoenix, Arizona business page using "phx-" CSS class prefixes must not be
+// fingerprinted as the Phoenix framework, as the old bare "phx-" signature did.
+func TestDetectFramework_PhoenixFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><title>Phoenix AZ Roofing</title></head>
+			<body class="phx-page">
+				<nav class="phx-nav"><a href="/">Phoenix Home</a></nav>
+				<section class="phx-hero">Serving Phoenix, Arizona since 1998.</section>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Phoenix" {
+		t.Errorf("false positive: phx- CSS class page detected as Phoenix (%.2f)", result.Confidence)
+	}
+}
+
+func TestDetectFramework_Shopify(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Powered-By", "Shopify")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><link rel="stylesheet" href="https://cdn.shopify.com/s/files/1/theme.css"></head>
+			<body>
+				<div id="shopify-section-header" class="shopify-section">Store</div>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "Shopify" {
+		t.Errorf("expected framework 'Shopify', got '%s'", result.Name)
+	}
+}
+
+// an article that merely mentions "Shopify" in prose (a listicle, a comparison)
+// must not be fingerprinted as a Shopify store, as the old bare "Shopify" body
+// substring did.
+func TestDetectFramework_ShopifyFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head><title>10 Best Shopify Alternatives in 2026</title></head>
+			<body>
+				<h1>Is Shopify Right For You?</h1>
+				<p>We compare Shopify with other e-commerce platforms.</p>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Shopify" {
+		t.Errorf("false positive: article mentioning Shopify detected as Shopify (%.2f)", result.Confidence)
+	}
+}
+
+func TestDetectFramework_CodeIgniter(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Set-Cookie", "ci_session=a1b2c3d4e5; path=/; HttpOnly")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><h1>My Shop</h1></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "CodeIgniter" {
+		t.Errorf("expected framework 'CodeIgniter', got '%s'", result.Name)
+	}
+}
+
+// a page that merely mentions codeigniter must not be fingerprinted as one.
+func TestDetectFramework_CodeIgniterFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<body>
+				<h1>Best PHP frameworks in 2026</h1>
+				<p>Laravel and codeigniter both ship a router and an ORM.</p>
+				<a href="https://codeigniter.com">codeigniter.com</a>
+				<pre>composer create-project codeigniter4/appstarter</pre>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "CodeIgniter" {
+		t.Errorf("expected no CodeIgniter match for prose mentioning it, got %.2f confidence", result.Confidence)
+	}
+}
+
+func TestDetectFramework_SpringBoot(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`<html><body><h1>Whitelabel Error Page</h1>` +
+			`<p>This application has no explicit mapping for /error, so you are seeing this as a fallback.</p>` +
+			`<div>There was an unexpected error (type=Internal Server Error, status=500).</div>` +
+			`</body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "Spring Boot" {
+		t.Errorf("expected framework 'Spring Boot', got '%s'", result.Name)
+	}
+}
+
+// a page that merely mentions spring-boot must not be fingerprinted as one.
+func TestDetectFramework_SpringBootFalsePositive(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<body>
+				<h1>Getting started with spring-boot</h1>
+				<p>Add spring-boot-starter-web to your pom.xml and run the app.</p>
+				<a href="https://spring.io/projects/spring-boot">spring.io</a>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Spring Boot" {
+		t.Errorf("expected no Spring Boot match for prose mentioning it, got %.2f confidence", result.Confidence)
+	}
+}
+
+// the dead "X-Powered-By: ASP.NET" signature only inflated the total weight
+// (containsHeader never builds a "name: value" string to match it against), so a
+// genuine asp.net response scored just under the threshold until it was removed.
+func TestDetectFramework_ASPNETPoweredByHeader(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-AspNetMvc-Version", "5.2")
+		w.Header().Set("X-Powered-By", "ASP.NET")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`<!DOCTYPE html><html><body><a href="/home/index.aspx">home</a></body></html>`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "ASP.NET" {
+		t.Errorf("expected framework 'ASP.NET', got '%s'", result.Name)
+	}
+}
+
+func TestDetectFramework_Ghost(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<head>
+				<meta name="generator" content="Ghost 6.46">
+			</head>
+			<body>Content</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "Ghost" {
+		t.Errorf("expected framework 'Ghost', got '%s'", result.Name)
+	}
+}
+
+// ghost-button is a common generic CSS class and must not read as Ghost CMS.
+func TestDetectFramework_GhostButtonNoMatch(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<body>
+				<a class="ghost-button" href="/signup">Sign up</a>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result != nil && result.Name == "Ghost" {
+		t.Errorf("expected no Ghost detection for a ghost-button page, got confidence %.2f", result.Confidence)
+	}
+}
+
+// the /ghost/api/ path is the only Ghost marker left for pages without the
+// generator meta, so guard that it still detects on its own.
+func TestDetectFramework_GhostAPIPath(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`
+			<!DOCTYPE html>
+			<html>
+			<body>
+				<script src="/ghost/api/content/posts/?key=abc"></script>
+			</body>
+			</html>
+		`))
+	}))
+	defer server.Close()
+
+	result, err := frameworks.DetectFramework(server.URL, 5*time.Second, "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result == nil {
+		t.Fatal("expected result, got nil")
+	}
+	if result.Name != "Ghost" {
+		t.Errorf("expected framework 'Ghost', got '%s'", result.Name)
+	}
+}

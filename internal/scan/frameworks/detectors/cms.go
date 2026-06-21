@@ -147,7 +147,7 @@ func (d *shopifyDetector) Name() string { return "Shopify" }
 
 func (d *shopifyDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "Shopify", Weight: 0.5},
+		{Pattern: "Shopify", Weight: 0.5, HeaderOnly: true},
 		{Pattern: "cdn.shopify.com", Weight: 0.4},
 		{Pattern: "shopify-section", Weight: 0.4},
 		{Pattern: "myshopify.com", Weight: 0.3},
@@ -173,7 +173,7 @@ func (d *ghostDetector) Name() string { return "Ghost" }
 
 func (d *ghostDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "ghost-", Weight: 0.4},
+		{Pattern: `<meta name="generator" content="Ghost`, Weight: 0.4},
 		{Pattern: "Ghost", Weight: 0.3, HeaderOnly: true},
 		{Pattern: "/ghost/api/", Weight: 0.4},
 	}

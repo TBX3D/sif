@@ -177,7 +177,6 @@ func (d *aspnetDetector) Signatures() []fw.Signature {
 		{Pattern: ".ashx", Weight: 0.2},
 		{Pattern: ".asmx", Weight: 0.2},
 		{Pattern: "asp.net_sessionid", Weight: 0.4, HeaderOnly: true},
-		{Pattern: "X-Powered-By: ASP.NET", Weight: 0.4, HeaderOnly: true},
 	}
 }
 
@@ -252,9 +251,9 @@ func (d *springBootDetector) Name() string { return "Spring Boot" }
 
 func (d *springBootDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "spring-boot", Weight: 0.5},
-		{Pattern: "actuator", Weight: 0.3},
-		{Pattern: "whitelabel", Weight: 0.2},
+		{Pattern: "Whitelabel Error Page", Weight: 0.5},
+		{Pattern: "This application has no explicit mapping for /error", Weight: 0.4},
+		{Pattern: "There was an unexpected error (type=", Weight: 0.3},
 	}
 }
 
@@ -352,7 +351,6 @@ func (d *ginDetector) Name() string { return "Gin" }
 func (d *ginDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
 		{Pattern: "gin-gonic", Weight: 0.4},
-		{Pattern: "gin", Weight: 0.2, HeaderOnly: true},
 	}
 }
 
@@ -375,9 +373,9 @@ func (d *phoenixDetector) Name() string { return "Phoenix" }
 
 func (d *phoenixDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "_csrf_token", Weight: 0.4, HeaderOnly: true},
-		{Pattern: "phx-", Weight: 0.3},
-		{Pattern: "phoenix", Weight: 0.2},
+		{Pattern: "data-phx-main", Weight: 0.4},
+		{Pattern: "data-phx-session", Weight: 0.3},
+		{Pattern: "data-phx-static", Weight: 0.3},
 	}
 }
 
@@ -401,7 +399,6 @@ func (d *strapiDetector) Name() string { return "Strapi" }
 func (d *strapiDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
 		{Pattern: "strapi", Weight: 0.4},
-		{Pattern: "/api/", Weight: 0.2},
 	}
 }
 
@@ -424,8 +421,7 @@ func (d *adonisDetector) Name() string { return "AdonisJS" }
 
 func (d *adonisDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "adonis", Weight: 0.4},
-		{Pattern: "_csrf", Weight: 0.2, HeaderOnly: true},
+		{Pattern: "adonis-session", Weight: 0.4, HeaderOnly: true},
 	}
 }
 
@@ -449,7 +445,7 @@ func (d *cakephpDetector) Name() string { return "CakePHP" }
 func (d *cakephpDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
 		{Pattern: "cakephp", Weight: 0.4},
-		{Pattern: "cake", Weight: 0.2},
+		{Pattern: "CAKEPHP", Weight: 0.4, HeaderOnly: true},
 	}
 }
 
@@ -472,7 +468,6 @@ func (d *codeigniterDetector) Name() string { return "CodeIgniter" }
 
 func (d *codeigniterDetector) Signatures() []fw.Signature {
 	return []fw.Signature{
-		{Pattern: "codeigniter", Weight: 0.4},
 		{Pattern: "ci_session", Weight: 0.4, HeaderOnly: true},
 	}
 }
