@@ -328,6 +328,20 @@ matchers:
 
 this matches responses with status 200 AND containing "ref: refs/".
 
+set `matchers-condition: or` to fire when any matcher hits instead of all. it
+applies to `http` and `tcp` modules alike.
+
+```yaml
+matchers-condition: or
+matchers:
+  - type: word
+    words:
+      - "redis_version:"
+  - type: word
+    words:
+      - "+PONG"
+```
+
 to require any matcher instead of all, set `matchers-condition: or` on the http
 block; the module then reports a finding when any one matcher matches.
 
