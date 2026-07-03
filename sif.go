@@ -233,7 +233,7 @@ func normalizeTarget(target string) (string, error) {
 
 // Run runs the pentesting suite, with the targets specified, according to the
 // settings specified.
-func (app *App) Run() error {
+func (app *App) Run(ctx context.Context) error {
 	// Handle --list-modules before any other processing
 	if app.settings.ListModules {
 		loader, err := modules.NewLoader()
@@ -297,6 +297,15 @@ func (app *App) Run() error {
 		}
 	}
 
+	// bound the whole run when -max-time is set; the deadline rides on the same
+	// ctx as the interrupt handler, so either one cancels the in-flight scanners
+	// that take a context and stops the target loop between steps.
+	if app.settings.MaxTime > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, app.settings.MaxTime)
+		defer cancel()
+	}
+
 	scansRun := make([]string, 0, 16)
 
 	// accumulate every module result across targets so the report writers can
@@ -323,6 +332,13 @@ func (app *App) Run() error {
 	}
 
 	for _, url := range app.targets {
+		// stop cleanly on interrupt or -max-time rather than starting another
+		// target; whatever was collected so far still gets reported below.
+		if ctx.Err() != nil {
+			log.Warnf("scan cancelled, not starting further targets: %v", ctx.Err())
+			break
+		}
+
 		output.Info("Starting scan on %s", output.Highlight.Render(url))
 
 		moduleResults := make([]ModuleResult, 0, 16)
@@ -404,7 +420,7 @@ func (app *App) Run() error {
 		}
 
 		if app.settings.Ports != "none" {
-			result, err := scan.Ports(context.Background(), app.settings.Ports, url, app.settings.Timeout, app.settings.Threads, app.settings.LogDir)
+			result, err := scan.Ports(ctx, app.settings.Ports, url, app.settings.Timeout, app.settings.Threads, app.settings.LogDir)
 			if err != nil {
 				log.Errorf("Error while running port scan: %s", err)
 			} else {
@@ -658,6 +674,9 @@ func (app *App) Run() error {
 				}
 
 				for _, m := range toRun {
+					if ctx.Err() != nil {
+						break
+					}
 					switch m.Info().ID {
 					case "nuclei-scan":
 						if app.settings.Nuclei {
@@ -678,7 +697,7 @@ func (app *App) Run() error {
 					}
 					modLog := output.Module(m.Info().ID)
 					modLog.Start()
-					result, err := m.Execute(context.Background(), url, opts)
+					result, err := m.Execute(ctx, url, opts)
 					if err != nil {
 						modLog.Error("failed: %v", err)
 						continue
@@ -732,7 +751,7 @@ func (app *App) Run() error {
 	// notify: ship the severity-filtered findings to any configured provider.
 	// kept as an isolated block so it merges cleanly with the diff-store bundle.
 	if app.settings.Notify {
-		if err := app.notifyFindings(context.Background(), allFindings); err != nil {
+		if err := app.notifyFindings(ctx, allFindings); err != nil {
 			log.Errorf("notify: %v", err)
 		}
 	}
