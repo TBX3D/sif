@@ -16,6 +16,8 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -274,5 +276,115 @@ func TestOutputSetConcurrentSerializesWrites(t *testing.T) {
 	}
 	for i := 0; i < workers; i++ {
 		<-done
+	}
+}
+
+// forceLogCreateFileFailure makes logger.CreateFile fail for badURL only: it
+// pre-creates a directory at the exact path badURL's log file would occupy,
+// so os.OpenFile hits "is a directory" the moment scanTarget calls
+// logger.CreateFile - before any network scanning happens. this reproduces a
+// genuine per-target scan error without leaning on the (now-fixed) logger
+// path-flattening bug.
+func forceLogCreateFileFailure(t *testing.T, logDir, badURL string) {
+	t.Helper()
+	// mirrors logger's flattenPath: strip the scheme, fold '/' runs to '_'.
+	badLogPath := filepath.Join(logDir, "forced-fail.invalid_x.log")
+	if err := os.Mkdir(badLogPath, 0o750); err != nil {
+		t.Fatalf("seeding directory collision at %q: %v", badLogPath, err)
+	}
+}
+
+// TestScanAllTargetsConcurrentPartialFailureKeepsGoodResults proves that at
+// concurrency > 1, one target's scanTarget error must not discard every other
+// target's already-collected results: before the fix, scanAllTargets returned
+// (results, err) and every caller (app.Run) treated any non-nil err as fatal,
+// throwing away every successfully-scanned target's findings and reports.
+func TestScanAllTargetsConcurrentPartialFailureKeepsGoodResults(t *testing.T) {
+	defer output.SetConcurrent(false)
+
+	s1, s2 := okServer(), okServer()
+	defer s1.Close()
+	defer s2.Close()
+
+	logDir := t.TempDir()
+	badURL := "http://forced-fail.invalid/x"
+	forceLogCreateFileFailure(t, logDir, badURL)
+
+	app := headersOnlyApp()
+	app.settings.Concurrency = 3
+	app.settings.LogDir = logDir
+	app.targets = []string{s1.URL, badURL, s2.URL}
+
+	results, err := app.scanAllTargets(context.Background(), "", false)
+	if err != nil {
+		t.Fatalf("scanAllTargets returned an error for a partial (1-of-3) failure: %v", err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("got %d results, want 3 (good targets must not be discarded)", len(results))
+	}
+	if !reflect.DeepEqual(results[0].scansRun, []string{"HTTP Headers"}) {
+		t.Errorf("result[0] (good target) lost its scan results: %#v", results[0])
+	}
+	if !reflect.DeepEqual(results[2].scansRun, []string{"HTTP Headers"}) {
+		t.Errorf("result[2] (good target) lost its scan results: %#v", results[2])
+	}
+	if !reflect.DeepEqual(results[1], targetScan{}) {
+		t.Errorf("result[1] (bad target) = %#v, want the zero targetScan", results[1])
+	}
+}
+
+// TestScanAllTargetsSequentialPartialFailureKeepsGoodResults is the
+// concurrency==1 analogue: the sequential loop returned early on the first
+// scanTarget error, which dropped not just the failing target but every
+// target still queued behind it.
+func TestScanAllTargetsSequentialPartialFailureKeepsGoodResults(t *testing.T) {
+	s1, s2 := okServer(), okServer()
+	defer s1.Close()
+	defer s2.Close()
+
+	logDir := t.TempDir()
+	badURL := "http://forced-fail.invalid/x"
+	forceLogCreateFileFailure(t, logDir, badURL)
+
+	app := headersOnlyApp()
+	app.settings.Concurrency = 1
+	app.settings.LogDir = logDir
+	app.targets = []string{s1.URL, badURL, s2.URL}
+
+	results, err := app.scanAllTargets(context.Background(), "", false)
+	if err != nil {
+		t.Fatalf("scanAllTargets returned an error for a partial (1-of-3) failure: %v", err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d results, want 2 (the two good targets, bad one skipped)", len(results))
+	}
+	for i, ts := range results {
+		if !reflect.DeepEqual(ts.scansRun, []string{"HTTP Headers"}) {
+			t.Errorf("result[%d] lost its scan results: %#v", i, ts)
+		}
+	}
+}
+
+// TestScanAllTargetsAllTargetsFailedReturnsError guards the other side: if
+// every target fails, the run must not silently look like a clean success. a
+// blanket "never fail the batch" fix would hide a totally broken run behind
+// exit code 0.
+func TestScanAllTargetsAllTargetsFailedReturnsError(t *testing.T) {
+	logDir := t.TempDir()
+	badURL1 := "http://forced-fail.invalid/x"
+	badURL2 := "http://forced-fail.invalid/x/y"
+	forceLogCreateFileFailure(t, logDir, badURL1)
+	if err := os.Mkdir(filepath.Join(logDir, "forced-fail.invalid_x_y.log"), 0o750); err != nil {
+		t.Fatalf("seeding second directory collision: %v", err)
+	}
+
+	app := headersOnlyApp()
+	app.settings.Concurrency = 2
+	app.settings.LogDir = logDir
+	app.targets = []string{badURL1, badURL2}
+
+	_, err := app.scanAllTargets(context.Background(), "", false)
+	if err == nil {
+		t.Fatal("scanAllTargets: want an error when every target failed, got nil")
 	}
 }

@@ -866,6 +866,7 @@ func (app *App) scanAllTargets(ctx context.Context, storeDir string, wantReport 
 
 	if concurrency <= 1 {
 		results := make([]targetScan, 0, len(targets))
+		failed := 0
 		for _, url := range targets {
 			// stop cleanly on interrupt or -max-time rather than starting
 			// another target; whatever was collected so far still gets
@@ -876,9 +877,19 @@ func (app *App) scanAllTargets(ctx context.Context, storeDir string, wantReport 
 			}
 			ts, err := app.scanTarget(ctx, url, storeDir, wantReport)
 			if err != nil {
-				return results, err
+				// a single target's scan error must not nuke the targets
+				// still queued behind it - log it fail-soft (the same
+				// pattern scanTarget itself uses for a module error) and
+				// keep going. the run only fails outright below if every
+				// target failed.
+				log.Errorf("target %s: scan failed, skipping: %v", url, err)
+				failed++
+				continue
 			}
 			results = append(results, ts)
+		}
+		if failed > 0 && len(results) == 0 {
+			return results, fmt.Errorf("all %d target(s) failed to scan", failed)
 		}
 		return results, nil
 	}
@@ -909,10 +920,16 @@ func (app *App) scanAllTargets(ctx context.Context, storeDir string, wantReport 
 	close(jobs)
 	wg.Wait()
 
-	for _, err := range errs {
+	// same fail-soft handling as the sequential branch above.
+	failed := 0
+	for i, err := range errs {
 		if err != nil {
-			return results, err
+			log.Errorf("target %s: scan failed, skipping: %v", targets[i], err)
+			failed++
 		}
+	}
+	if failed > 0 && failed == len(targets) {
+		return results, fmt.Errorf("all %d target(s) failed to scan", failed)
 	}
 
 	return results, nil
