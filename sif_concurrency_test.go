@@ -388,3 +388,39 @@ func TestScanAllTargetsAllTargetsFailedReturnsError(t *testing.T) {
 		t.Fatal("scanAllTargets: want an error when every target failed, got nil")
 	}
 }
+
+// TestScanAllTargetsRestoresConcurrentState proves scanAllTargets leaves the
+// output package's global sink state exactly as it found it. before the fix,
+// concurrency > 1 called output.SetConcurrent(true) with no matching
+// SetConcurrent(false), so the sink stayed wrapped for the rest of the
+// process (and every later output.Concurrent() caller, e.g. spinners/progress
+// gating their live-redraw path) - this test deliberately omits the
+// `defer output.SetConcurrent(false)` every other test in this file uses, so
+// it actually observes whatever scanAllTargets itself leaves behind.
+func TestScanAllTargetsRestoresConcurrentState(t *testing.T) {
+	if output.Concurrent() {
+		t.Fatal("output.Concurrent() = true before the test even started; a prior test leaked state")
+	}
+
+	servers := []*httptest.Server{okServer(), okServer(), okServer()}
+	defer func() {
+		for _, s := range servers {
+			s.Close()
+		}
+		output.SetConcurrent(false) // safety net; must already be false post-fix
+	}()
+
+	app := headersOnlyApp()
+	app.settings.Concurrency = 3
+	for _, s := range servers {
+		app.targets = append(app.targets, s.URL)
+	}
+
+	if _, err := app.scanAllTargets(context.Background(), "", false); err != nil {
+		t.Fatalf("scanAllTargets: %v", err)
+	}
+
+	if output.Concurrent() {
+		t.Error("output.Concurrent() = true after scanAllTargets returned, want false (SetConcurrent(true) was never restored)")
+	}
+}

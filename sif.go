@@ -895,6 +895,7 @@ func (app *App) scanAllTargets(ctx context.Context, storeDir string, wantReport 
 	}
 
 	output.SetConcurrent(true)
+	defer output.SetConcurrent(false)
 
 	results := make([]targetScan, len(targets))
 	errs := make([]error, len(targets))
