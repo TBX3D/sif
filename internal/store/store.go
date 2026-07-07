@@ -164,9 +164,9 @@ func writeFileAtomic(dir, path string, data []byte) error {
 	}
 	tmpPath := tmp.Name()
 	// on any early return the temp file must not linger; once the rename
-	// below succeeds this Remove is a harmless no-op (the path is already
-	// gone).
-	defer os.Remove(tmpPath)
+	// below succeeds this is a no-op (the path is already gone) and its
+	// error is deliberately discarded.
+	defer func() { _ = os.Remove(tmpPath) }()
 
 	if _, err := tmp.Write(data); err != nil {
 		tmp.Close()
