@@ -56,13 +56,13 @@ func TestResolveVersionFeedsCVELookup(t *testing.T) {
 	}
 
 	// ...and looking "unknown" up finds nothing, proving the old behavior missed it.
-	if cves, _ := getVulnerabilities("Laravel", "unknown"); len(cves) != 0 {
+	if cves, _, _ := getVulnerabilities("Laravel", "unknown"); len(cves) != 0 {
 		t.Fatalf("expected no CVEs for unknown version, got %v", cves)
 	}
 
 	// the reconciled version feeds the lookup and the CVE shows up.
 	version := resolveVersion("unknown", extracted)
-	cves, _ := getVulnerabilities("Laravel", version)
+	cves, _, _ := getVulnerabilities("Laravel", version)
 	if len(cves) == 0 {
 		t.Errorf("expected Laravel %s to surface a CVE, got none", version)
 	}
@@ -100,7 +100,7 @@ func TestVersionAffected(t *testing.T) {
 // silently missed CVE-2023-44487.
 func TestGetVulnerabilitiesBareMajor(t *testing.T) {
 	for _, version := range []string{"10", "9"} {
-		cves, _ := getVulnerabilities("Drupal", version)
+		cves, _, _ := getVulnerabilities("Drupal", version)
 		if len(cves) == 0 {
 			t.Errorf("expected Drupal %s to surface a CVE, got none", version)
 			continue
@@ -114,5 +114,24 @@ func TestGetVulnerabilitiesBareMajor(t *testing.T) {
 		if !found {
 			t.Errorf("expected Drupal %s CVEs to contain CVE-2023-44487, got %v", version, cves)
 		}
+	}
+}
+
+// reference URLs are deterministic NVD detail links derived from the CVE ID,
+// carried alongside cves/recommendations for report-only enrichment.
+func TestGetVulnerabilitiesReferences(t *testing.T) {
+	_, _, references := getVulnerabilities("Drupal", "10")
+	if len(references) == 0 {
+		t.Fatal("expected at least one reference, got none")
+	}
+	want := "https://nvd.nist.gov/vuln/detail/CVE-2023-44487"
+	found := false
+	for _, ref := range references {
+		if ref == want {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected references to contain %q, got %v", want, references)
 	}
 }
