@@ -116,6 +116,27 @@ func TestFaviconEvidence(t *testing.T) {
 	}
 }
 
+// TestFaviconEvidenceNamesCanonicalTech proves faviconEvidence consults the same
+// SSOT table as fingerprint.LookupFaviconTech rather than a private copy: the
+// evidence line must always match the format built directly from the shared
+// hash + lookup functions, whether or not the fixture hash is canonical.
+func TestFaviconEvidenceNamesCanonicalTech(t *testing.T) {
+	body := string(faviconFixture)
+	hash := fingerprint.FaviconHash(faviconFixture)
+	want := fmt.Sprintf("favicon mmh3=%d", hash)
+	if tech, ok := fingerprint.LookupFaviconTech(hash); ok {
+		want = fmt.Sprintf("favicon mmh3=%d tech=%s", hash, tech)
+	}
+
+	got, ok := faviconEvidence([]Matcher{{Type: "favicon"}}, body)
+	if !ok {
+		t.Fatal("faviconEvidence ok = false, want true")
+	}
+	if got != want {
+		t.Errorf("evidence = %q, want %q", got, want)
+	}
+}
+
 func TestValidateMatchers(t *testing.T) {
 	intp := func(n int) *int { return &n }
 
