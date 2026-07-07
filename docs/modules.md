@@ -201,7 +201,9 @@ dns matchers and extractors take a `part`:
 
 the `status` matcher type is http only and is rejected on a dns module; match a
 response code with a word or regex matcher on part `rcode`. extractors are regex
-only on dns.
+only on dns. `case-insensitive` and `encoding` apply to dns word/regex matchers
+same as http; `type: range` is rejected on dns (there is no size or status to
+test).
 
 ### tcp
 
@@ -233,9 +235,12 @@ tcp:
 
 #### matchers and extractors
 
-tcp runs `word`, `regex` and `size` matchers (no `status`/`favicon`, those are
-http only) against the banner string, and `regex` extractors pull values out of
-it. there is no `part` selector: the banner is the only stream.
+tcp runs `word`, `regex`, `size` and `range` matchers (no `status`/`favicon`,
+those are http only) against the banner string, and `regex` extractors pull
+values out of it. there is no `part` selector: the banner is the only stream.
+`case-insensitive` and `encoding` apply to the word/regex matchers same as
+http. a `range` matcher on tcp only supports `source: size` (banner length);
+`source: status` is rejected at load since tcp has no status code.
 
 ```yaml
 tcp:
@@ -294,6 +299,21 @@ matchers:
 - `or` - match any word (default)
 - `and` - match all words
 
+set `case-insensitive: true` to fold both the content and the words to
+lowercase before comparing. set `encoding: base64` or `encoding: hex` to decode
+the selected part before matching; a part that fails to decode misses rather
+than matching garbage. both options apply on http, dns, and tcp.
+
+```yaml
+matchers:
+  - type: word
+    part: body
+    words:
+      - "admin"
+    case-insensitive: true
+    encoding: base64
+```
+
 ### regex matcher
 
 match regex patterns.
@@ -309,6 +329,10 @@ matchers:
     condition: or
 ```
 
+`case-insensitive` and `encoding` work the same as on the word matcher.
+`case-insensitive` prepends `(?i)` to each pattern before compiling, so it
+composes with anchors and any inline flags already in the pattern.
+
 ### size matcher
 
 match the response body length in bytes (measured after the 5 MB response cap, so larger sizes never match).
@@ -320,6 +344,27 @@ matchers:
       - 0
       - 1337
 ```
+
+### range matcher
+
+match a numeric value against inclusive `min`/`max` bounds instead of an exact
+list. either bound may be omitted for an open-ended range, but at least one is
+required.
+
+```yaml
+matchers:
+  - type: range
+    source: status
+    min: 500
+    max: 599
+```
+
+**source:**
+- `size` (default) - response/banner byte length
+- `status` - the http status code (http only; rejected on dns and tcp)
+
+`range` is supported on http and tcp (`source: size` only there); it is
+rejected at load on dns modules.
 
 ### favicon matcher
 
