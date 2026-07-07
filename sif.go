@@ -23,6 +23,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/log"
 	"github.com/vmfunc/sif/internal/config"
@@ -331,19 +332,12 @@ func (app *App) Run(ctx context.Context) error {
 		}
 	}
 
-	for _, url := range app.targets {
-		// stop cleanly on interrupt or -max-time rather than starting another
-		// target; whatever was collected so far still gets reported below.
-		if ctx.Err() != nil {
-			log.Warnf("scan cancelled, not starting further targets: %v", ctx.Err())
-			break
-		}
+	results, err := app.scanAllTargets(ctx, storeDir, wantReport)
+	if err != nil {
+		return err
+	}
 
-		ts, err := app.scanTarget(ctx, url, storeDir, wantReport)
-		if err != nil {
-			return err
-		}
-
+	for _, ts := range results {
 		scansRun = append(scansRun, ts.scansRun...)
 		app.logFiles = append(app.logFiles, ts.logFiles...)
 		allFindings = append(allFindings, ts.findings...)
@@ -817,6 +811,77 @@ func (app *App) scanTarget(ctx context.Context, url, storeDir string, wantReport
 	}
 
 	return ts, nil
+}
+
+// scanAllTargets runs scanTarget over every target, honoring
+// app.settings.Concurrency, and returns one targetScan per target in input
+// order. at concurrency 1 this is the plain sequential loop (no pool, no
+// output.SetConcurrent) so the default path stays byte-identical to a
+// single-worker run. at concurrency > 1 it fans out across a fixed pool of
+// worker goroutines pulling target indices off a channel, writing results
+// into pre-sized slices indexed by position so no accumulator is shared.
+func (app *App) scanAllTargets(ctx context.Context, storeDir string, wantReport bool) ([]targetScan, error) {
+	targets := app.targets
+	concurrency := app.settings.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	if concurrency > len(targets) {
+		concurrency = len(targets)
+	}
+
+	if concurrency <= 1 {
+		results := make([]targetScan, 0, len(targets))
+		for _, url := range targets {
+			// stop cleanly on interrupt or -max-time rather than starting
+			// another target; whatever was collected so far still gets
+			// reported below.
+			if ctx.Err() != nil {
+				log.Warnf("scan cancelled, not starting further targets: %v", ctx.Err())
+				break
+			}
+			ts, err := app.scanTarget(ctx, url, storeDir, wantReport)
+			if err != nil {
+				return results, err
+			}
+			results = append(results, ts)
+		}
+		return results, nil
+	}
+
+	output.SetConcurrent(true)
+
+	results := make([]targetScan, len(targets))
+	errs := make([]error, len(targets))
+	jobs := make(chan int)
+
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	for w := 0; w < concurrency; w++ {
+		go func() {
+			defer wg.Done()
+			for i := range jobs {
+				if ctx.Err() != nil {
+					continue
+				}
+				results[i], errs[i] = app.scanTarget(ctx, targets[i], storeDir, wantReport)
+			}
+		}()
+	}
+
+	for i := range targets {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	for _, err := range errs {
+		if err != nil {
+			return results, err
+		}
+	}
+
+	return results, nil
 }
 
 // printFindings writes one normalized finding per line to stdout for the

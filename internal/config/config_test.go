@@ -13,6 +13,7 @@
 package config
 
 import (
+	"os"
 	"testing"
 	"time"
 )
@@ -161,5 +162,43 @@ func TestSettingsWithValues(t *testing.T) {
 	}
 	if settings.Threads != 20 {
 		t.Errorf("expected Threads 20, got %d", settings.Threads)
+	}
+}
+
+func TestSettingsConcurrencyDefault(t *testing.T) {
+	settings := &Settings{}
+
+	// concurrency defaults to zero value, actual default (1) is set in Parse()
+	if settings.Concurrency != 0 {
+		t.Errorf("expected Concurrency zero value, got %v", settings.Concurrency)
+	}
+}
+
+// TestParseConcurrencyFloor exercises Parse's floor directly: 0 and negative
+// values must not survive to the run (a non-positive worker count would
+// spawn no goroutines and silently scan nothing).
+func TestParseConcurrencyFloor(t *testing.T) {
+	origArgs := os.Args
+	defer func() { os.Args = origArgs }()
+
+	tests := []struct {
+		name string
+		args []string
+		want int
+	}{
+		{"unset defaults to one", []string{"sif"}, 1},
+		{"zero floors to one", []string{"sif", "-concurrency=0"}, 1},
+		{"negative floors to one", []string{"sif", "-concurrency=-5"}, 1},
+		{"positive passes through", []string{"sif", "-concurrency=4"}, 4},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			os.Args = tt.args
+			settings := Parse()
+			if settings.Concurrency != tt.want {
+				t.Errorf("Concurrency = %d, want %d", settings.Concurrency, tt.want)
+			}
+		})
 	}
 }

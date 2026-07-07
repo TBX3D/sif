@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -161,6 +162,55 @@ func Writer() io.Writer {
 	return sink
 }
 
+// concurrent marks whether multiple targets are being scanned in parallel.
+// spinners/progress/ClearLine gate their live-redraw paths on it, since
+// several goroutines cannot share one animated terminal line.
+var concurrent bool
+
+// baseSink is the sink SetConcurrent(true) wrapped, kept so
+// SetConcurrent(false) can restore it exactly (including a prior -silent
+// reroute to stderr) instead of resetting to stdout.
+var baseSink io.Writer
+
+// lockingWriter serializes writes to an underlying io.Writer so concurrent
+// callers each get one atomic Write; lines stay whole, though lines from
+// different callers may interleave.
+type lockingWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockingWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+// SetConcurrent wraps (or unwraps) the sink for cross-target parallelism.
+// call this after SetSilent so the lock wraps whatever sink -silent already
+// chose. idempotent: repeated calls with the same value are no-ops.
+func SetConcurrent(enabled bool) {
+	if enabled {
+		if concurrent {
+			return
+		}
+		baseSink = sink
+		sink = &lockingWriter{w: sink}
+		concurrent = true
+		return
+	}
+	if concurrent {
+		sink = baseSink
+	}
+	concurrent = false
+}
+
+// Concurrent reports whether cross-target parallelism is active. callers
+// gate live-redraw widgets (spinners, progress bars, ClearLine) on this.
+func Concurrent() bool {
+	return concurrent
+}
+
 // Info prints an informational message with [*] prefix
 func Info(format string, args ...interface{}) {
 	if apiMode {
@@ -286,7 +336,7 @@ func (m *ModuleLogger) Complete(resultCount int, resultType string) {
 // ClearLine clears the current line (for progress bar updates). silent mode is
 // non-interactive, so there's no live line to clear and stdout stays untouched.
 func ClearLine() {
-	if !IsTTY || silent {
+	if !IsTTY || silent || concurrent {
 		return
 	}
 	fmt.Fprint(sink, "\033[2K\r")
