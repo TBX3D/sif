@@ -200,10 +200,10 @@ func DetectFrameworks(url string, timeout time.Duration, logdir string) ([]*Fram
 func assembleResult(d detectionResult, bodyStr, url, logdir string, log *output.ModuleLogger) *FrameworkResult {
 	versionMatch := ExtractVersionOptimized(bodyStr, d.name)
 	version := resolveVersion(d.version, versionMatch.Version)
-	cves, suggestions := getVulnerabilities(d.name, version)
+	cves, suggestions, references := getVulnerabilities(d.name, version)
 
 	result := NewFrameworkResult(d.name, version, d.confidence, versionMatch.Confidence)
-	result.WithVulnerabilities(cves, suggestions)
+	result.WithVulnerabilities(cves, suggestions, references)
 
 	if logdir != "" {
 		logEntry := fmt.Sprintf("Detected framework: %s (version: %s, confidence: %.2f, version_confidence: %.2f)\n",
@@ -255,18 +255,19 @@ func resolveVersion(detectorVersion, extractedVersion string) string {
 	return unknownVersion
 }
 
-// getVulnerabilities returns CVEs and recommendations for a framework version.
-func getVulnerabilities(framework, version string) ([]string, []string) {
+// getVulnerabilities returns CVEs, recommendations and reference URLs for a
+// framework version.
+func getVulnerabilities(framework, version string) (cves, recommendations, references []string) {
 	entries, exists := knownCVEs[framework]
 	if !exists {
-		return nil, nil
+		return nil, nil, nil
 	}
 
-	var cves []string
-	var recommendations []string
 	seenRecs := make(map[string]bool)
+	seenRefs := make(map[string]bool)
 
-	for _, entry := range entries {
+	for i := range entries {
+		entry := &entries[i]
 		for _, affectedVer := range entry.AffectedVersions {
 			if versionAffected(version, affectedVer) {
 				cves = append(cves, fmt.Sprintf("%s (%s)", entry.CVE, entry.Severity))
@@ -276,17 +277,26 @@ func getVulnerabilities(framework, version string) ([]string, []string) {
 						seenRecs[rec] = true
 					}
 				}
+				for _, ref := range entry.References {
+					if !seenRefs[ref] {
+						references = append(references, ref)
+						seenRefs[ref] = true
+					}
+				}
 				break
 			}
 		}
 	}
 
-	return cves, recommendations
+	return cves, recommendations, references
 }
 
 // versionAffected reports whether version falls under an affected-version
-// entry. the entry is a version prefix, matched only on dotted boundaries, so
-// "4.2" covers 4.2 and 4.2.1 but not 4.20.
+// entry, matched on dotted boundaries in either direction: "4.2" covers 4.2
+// and 4.2.1 but not 4.20, and a coarser detected version (e.g. Drupal's
+// bare-major "10") covers the entry's listed sub-versions ("10.0").
 func versionAffected(version, affected string) bool {
-	return version == affected || strings.HasPrefix(version, affected+".")
+	return version == affected ||
+		strings.HasPrefix(version, affected+".") ||
+		strings.HasPrefix(affected, version+".")
 }
