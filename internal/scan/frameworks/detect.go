@@ -289,8 +289,11 @@ func getVulnerabilities(framework, version string) ([]string, []string) {
 }
 
 // versionAffected reports whether version falls under an affected-version
-// entry. the entry is a version prefix, matched only on dotted boundaries, so
-// "4.2" covers 4.2 and 4.2.1 but not 4.20.
+// entry, matched on dotted boundaries in either direction: "4.2" covers 4.2
+// and 4.2.1 but not 4.20, and a coarser detected version (e.g. Drupal's
+// bare-major "10") covers the entry's listed sub-versions ("10.0").
 func versionAffected(version, affected string) bool {
-	return version == affected || strings.HasPrefix(version, affected+".")
+	return version == affected ||
+		strings.HasPrefix(version, affected+".") ||
+		strings.HasPrefix(affected, version+".")
 }
