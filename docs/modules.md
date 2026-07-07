@@ -65,7 +65,7 @@ info:
 
 ### type (required)
 
-module type. currently only `http` is supported.
+module type. `http` and `dns` are supported.
 
 ```yaml
 type: http
@@ -167,6 +167,41 @@ concurrent requests (default: 10).
 http:
   threads: 5
 ```
+
+### dns
+
+dns lookup configuration. the module resolves one name and record type, then
+runs its matchers and extractors against the answer.
+
+```yaml
+type: dns
+
+dns:
+  type: txt
+  name: "{{FQDN}}"
+```
+
+#### type
+
+record type to query: `a` (default), `aaaa`, `cname`, `mx`, `ns`, `txt`, `soa`,
+`srv`, `caa`, `ptr`, or `any`.
+
+#### name
+
+name to resolve. `{{FQDN}}` is replaced with the target, and an empty name uses
+the target host. a target given as a url is reduced to its hostname.
+
+#### dns matcher and extractor parts
+
+dns matchers and extractors take a `part`:
+
+- `answer` - the resource records
+- `rcode` - the response status, e.g. `NOERROR` or `NXDOMAIN`
+- `all` (default) - the full response text
+
+the `status` matcher type is http only and is rejected on a dns module; match a
+response code with a word or regex matcher on part `rcode`. extractors are regex
+only on dns.
 
 ## matchers
 
