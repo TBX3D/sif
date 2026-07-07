@@ -339,6 +339,7 @@ func TestDNSHost(t *testing.T) {
 }
 
 func TestValidateDNS(t *testing.T) {
+	intp := func(n int) *int { return &n }
 	tests := []struct {
 		name string
 		cfg  *DNSConfig
@@ -350,6 +351,7 @@ func TestValidateDNS(t *testing.T) {
 		{"unknown record type", &DNSConfig{Type: "zzz"}, false},
 		{"status matcher rejected", &DNSConfig{Type: "a", Matchers: []Matcher{{Type: "status"}}}, false},
 		{"unknown matcher type rejected", &DNSConfig{Type: "a", Matchers: []Matcher{{Type: "word"}, {Type: "size"}}}, false},
+		{"range matcher rejected", &DNSConfig{Type: "a", Matchers: []Matcher{{Type: "range", Min: intp(1)}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -384,6 +386,54 @@ func TestParseDNSValidation(t *testing.T) {
 	badMatcher := write("badmatcher.yaml", "id: bm\ntype: dns\ndns:\n  type: a\n  matchers:\n    - type: status\n      status: [0]\n")
 	if _, err := ParseYAMLModule(badMatcher); err == nil {
 		t.Fatal("status matcher on dns accepted")
+	}
+
+	badRange := write("badrange.yaml", "id: br\ntype: dns\ndns:\n  type: a\n  matchers:\n    - type: range\n      min: 1\n")
+	if _, err := ParseYAMLModule(badRange); err == nil {
+		t.Fatal("range matcher on dns accepted")
+	}
+}
+
+func TestExecuteDNSModuleCaseInsensitiveWord(t *testing.T) {
+	withFakeDNS(t, &retryabledns.DNSData{
+		AllRecords: []string{"example.com. 300 IN TXT AdMiN-Token-Present"},
+		StatusCode: "NOERROR",
+		Raw:        "example.com. 300 IN TXT AdMiN-Token-Present",
+	}, nil)
+
+	def := dnsDef(&DNSConfig{
+		Type:     "txt",
+		Matchers: []Matcher{{Type: "word", Part: "answer", Words: []string{"admin-token"}, CaseInsensitive: true}},
+	})
+
+	res, err := ExecuteDNSModule(context.Background(), "example.com", def, Options{})
+	if err != nil {
+		t.Fatalf("ExecuteDNSModule: %v", err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (case-insensitive word should hit mixed-case answer)", len(res.Findings))
+	}
+}
+
+func TestExecuteDNSModuleBase64Word(t *testing.T) {
+	// base64 of "internal-only"
+	withFakeDNS(t, &retryabledns.DNSData{
+		AllRecords: []string{"aW50ZXJuYWwtb25seQ=="},
+		StatusCode: "NOERROR",
+		Raw:        "aW50ZXJuYWwtb25seQ==",
+	}, nil)
+
+	def := dnsDef(&DNSConfig{
+		Type:     "txt",
+		Matchers: []Matcher{{Type: "word", Part: "answer", Words: []string{"internal-only"}, Encoding: "base64"}},
+	})
+
+	res, err := ExecuteDNSModule(context.Background(), "example.com", def, Options{})
+	if err != nil {
+		t.Fatalf("ExecuteDNSModule: %v", err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (base64-decoded answer should hit the word)", len(res.Findings))
 	}
 }
 

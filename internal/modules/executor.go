@@ -15,6 +15,8 @@ package modules
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -484,10 +486,18 @@ func checkMatcher(m *Matcher, resp *http.Response, body string) bool {
 		return false
 
 	case "word":
-		return checkWords(getPart(m.Part, resp, body), m.Words, m.Condition)
+		content, ok := decodePart(getPart(m.Part, resp, body), m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkWords(content, m.Words, m.Condition, m.CaseInsensitive)
 
 	case "regex":
-		return checkRegex(getPart(m.Part, resp, body), m.Regex, m.Condition)
+		content, ok := decodePart(getPart(m.Part, resp, body), m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkRegex(content, m.Regex, m.Condition, m.CaseInsensitive)
 
 	case "favicon":
 		return checkFaviconHash(body, m.Hash)
@@ -501,9 +511,54 @@ func checkMatcher(m *Matcher, resp *http.Response, body string) bool {
 		}
 		return false
 
+	case "range":
+		switch strings.ToLower(m.Source) {
+		case "status":
+			return inRange(resp.StatusCode, m.Min, m.Max)
+		case "size", "":
+			return inRange(len(body), m.Min, m.Max)
+		default:
+			return false
+		}
+
 	default:
 		return false
 	}
+}
+
+// decodePart decodes content per the matcher's encoding before word/regex
+// matching: "" passes through, "base64"/"hex" decode the whole string. A decode
+// failure yields ok=false so the matcher misses rather than matching garbage.
+func decodePart(s, encoding string) (string, bool) {
+	switch strings.ToLower(encoding) {
+	case "":
+		return s, true
+	case "base64":
+		b, err := base64.StdEncoding.DecodeString(strings.TrimSpace(s))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	case "hex":
+		b, err := hex.DecodeString(strings.TrimSpace(s))
+		if err != nil {
+			return "", false
+		}
+		return string(b), true
+	default:
+		return "", false
+	}
+}
+
+// inRange reports whether v is within the inclusive bounds; a nil bound is open.
+func inRange(v int, lo, hi *int) bool {
+	if lo != nil && v < *lo {
+		return false
+	}
+	if hi != nil && v > *hi {
+		return false
+	}
+	return true
 }
 
 // getPart extracts the relevant part of the response.
@@ -536,11 +591,21 @@ func getPart(part string, resp *http.Response, body string) string {
 	}
 }
 
-// checkWords checks if any/all words are found.
-func checkWords(content string, words []string, condition string) bool {
+// checkWords checks if any/all words are found. caseInsensitive folds both the
+// content and the words before comparing.
+func checkWords(content string, words []string, condition string, caseInsensitive bool) bool {
+	if caseInsensitive {
+		content = strings.ToLower(content)
+	}
+	fold := func(w string) string {
+		if caseInsensitive {
+			return strings.ToLower(w)
+		}
+		return w
+	}
 	if condition == "or" {
 		for _, word := range words {
-			if strings.Contains(content, word) {
+			if strings.Contains(content, fold(word)) {
 				return true
 			}
 		}
@@ -548,18 +613,25 @@ func checkWords(content string, words []string, condition string) bool {
 	}
 	// Default to AND
 	for _, word := range words {
-		if !strings.Contains(content, word) {
+		if !strings.Contains(content, fold(word)) {
 			return false
 		}
 	}
 	return true
 }
 
-// checkRegex checks if any/all regex patterns match.
-func checkRegex(content string, patterns []string, condition string) bool {
+// checkRegex checks if any/all regex patterns match. caseInsensitive prepends
+// "(?i)" to each pattern before compiling.
+func checkRegex(content string, patterns []string, condition string, caseInsensitive bool) bool {
+	compile := func(pattern string) (*regexp.Regexp, error) {
+		if caseInsensitive {
+			pattern = "(?i)" + pattern
+		}
+		return regexp.Compile(pattern)
+	}
 	if condition == "or" {
 		for _, pattern := range patterns {
-			re, err := regexp.Compile(pattern)
+			re, err := compile(pattern)
 			if err != nil {
 				continue
 			}
@@ -571,7 +643,7 @@ func checkRegex(content string, patterns []string, condition string) bool {
 	}
 	// Default to AND
 	for _, pattern := range patterns {
-		re, err := regexp.Compile(pattern)
+		re, err := compile(pattern)
 		if err != nil {
 			return false
 		}

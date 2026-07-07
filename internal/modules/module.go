@@ -86,7 +86,7 @@ type Finding struct {
 // Matcher defines matching logic for module responses.
 // Matchers are used to determine if a response indicates a vulnerability.
 type Matcher struct {
-	Type      string   `yaml:"type"` // regex, status, word, favicon
+	Type      string   `yaml:"type"` // regex, status, word, favicon, size, range
 	Part      string   `yaml:"part"` // body, header, all
 	Regex     []string `yaml:"regex,omitempty"`
 	Words     []string `yaml:"words,omitempty"`
@@ -95,6 +95,20 @@ type Matcher struct {
 	Hash      []int64  `yaml:"hash,omitempty"` // favicon: shodan mmh3 hashes (signed or unsigned)
 	Condition string   `yaml:"condition"`      // and, or
 	Negative  bool     `yaml:"negative"`
+
+	// CaseInsensitive folds word and regex matching to case-insensitive when set
+	// (word/regex matchers only; ignored by status/size/favicon/range).
+	CaseInsensitive bool `yaml:"case-insensitive,omitempty"`
+	// Encoding decodes the selected part before word/regex matching: base64 or
+	// hex. Empty means no decode (word/regex matchers only).
+	Encoding string `yaml:"encoding,omitempty"`
+	// Source selects the numeric value a range matcher tests: size (default,
+	// response/banner byte length) or status (http status code). range only.
+	Source string `yaml:"source,omitempty"`
+	// Min and Max are the inclusive bounds of a range matcher. A nil bound is
+	// unbounded on that side; at least one must be set. range only.
+	Min *int `yaml:"min,omitempty"`
+	Max *int `yaml:"max,omitempty"`
 }
 
 // Extractor defines data extraction from responses.

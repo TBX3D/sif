@@ -117,6 +117,8 @@ func TestFaviconEvidence(t *testing.T) {
 }
 
 func TestValidateMatchers(t *testing.T) {
+	intp := func(n int) *int { return &n }
+
 	tests := []struct {
 		name     string
 		matchers []Matcher
@@ -127,6 +129,17 @@ func TestValidateMatchers(t *testing.T) {
 		{name: "favicon with no hash", matchers: []Matcher{{Type: "favicon"}}, wantErr: true},
 		{name: "out-of-range hash", matchers: []Matcher{{Type: "favicon", Hash: []int64{99999999999}}}, wantErr: true},
 		{name: "non-favicon ignored", matchers: []Matcher{{Type: "word", Words: []string{"x"}}}, wantErr: false},
+		{name: "encoding base64 allowed", matchers: []Matcher{{Type: "word", Encoding: "base64", Words: []string{"x"}}}, wantErr: false},
+		{name: "encoding hex allowed", matchers: []Matcher{{Type: "regex", Encoding: "hex", Regex: []string{"x"}}}, wantErr: false},
+		{name: "encoding case-insensitive", matchers: []Matcher{{Type: "word", Encoding: "BASE64", Words: []string{"x"}}}, wantErr: false},
+		{name: "unknown encoding rejected", matchers: []Matcher{{Type: "word", Encoding: "base32", Words: []string{"x"}}}, wantErr: true},
+		{name: "range with min only", matchers: []Matcher{{Type: "range", Min: intp(1)}}, wantErr: false},
+		{name: "range with max only", matchers: []Matcher{{Type: "range", Max: intp(100)}}, wantErr: false},
+		{name: "range with neither bound rejected", matchers: []Matcher{{Type: "range"}}, wantErr: true},
+		{name: "range min greater than max rejected", matchers: []Matcher{{Type: "range", Min: intp(100), Max: intp(1)}}, wantErr: true},
+		{name: "range source size allowed", matchers: []Matcher{{Type: "range", Source: "size", Min: intp(1)}}, wantErr: false},
+		{name: "range source status allowed", matchers: []Matcher{{Type: "range", Source: "status", Min: intp(200)}}, wantErr: false},
+		{name: "range bad source rejected", matchers: []Matcher{{Type: "range", Source: "bogus", Min: intp(1)}}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

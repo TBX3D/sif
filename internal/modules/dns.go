@@ -202,9 +202,17 @@ func checkDNSMatcher(m *Matcher, resp dnsResponse) bool {
 
 	switch m.Type {
 	case "word":
-		return checkWords(part, m.Words, m.Condition)
+		content, ok := decodePart(part, m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkWords(content, m.Words, m.Condition, m.CaseInsensitive)
 	case "regex":
-		return checkRegex(part, m.Regex, m.Condition)
+		content, ok := decodePart(part, m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkRegex(content, m.Regex, m.Condition, m.CaseInsensitive)
 	default:
 		return false
 	}

@@ -39,8 +39,9 @@ var newTCPConn = func(ctx context.Context, addr string, timeout time.Duration) (
 }
 
 // validateTCP rejects, at load time, a tcp config the executor cannot run: a
-// port outside 1-65535, an unknown matchers-condition, or a matcher type other
-// than word, regex, or size (status and favicon are http only).
+// port outside 1-65535, an unknown matchers-condition, a matcher type other
+// than word, regex, size, or range (status and favicon are http only), or a
+// range matcher with source=status (status is http only; tcp has no status).
 func validateTCP(cfg *TCPConfig) error {
 	if cfg.Port < 1 || cfg.Port > 65535 {
 		return fmt.Errorf("tcp port %d out of range (use 1-65535)", cfg.Port)
@@ -51,8 +52,12 @@ func validateTCP(cfg *TCPConfig) error {
 	for i := range cfg.Matchers {
 		switch cfg.Matchers[i].Type {
 		case "word", "regex", "size":
+		case "range":
+			if strings.EqualFold(cfg.Matchers[i].Source, "status") {
+				return fmt.Errorf("tcp range matcher source %q is not supported (status is http only; use size)", cfg.Matchers[i].Source)
+			}
 		default:
-			return fmt.Errorf("tcp matcher type %q is not supported (use word, regex, or size)", cfg.Matchers[i].Type)
+			return fmt.Errorf("tcp matcher type %q is not supported (use word, regex, size, or range)", cfg.Matchers[i].Type)
 		}
 	}
 	return nil
@@ -233,9 +238,17 @@ func checkTCPMatchers(matchers []Matcher, condition string, data string) bool {
 func checkTCPMatcher(m *Matcher, data string) bool {
 	switch m.Type {
 	case "word":
-		return checkWords(data, m.Words, m.Condition)
+		content, ok := decodePart(data, m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkWords(content, m.Words, m.Condition, m.CaseInsensitive)
 	case "regex":
-		return checkRegex(data, m.Regex, m.Condition)
+		content, ok := decodePart(data, m.Encoding)
+		if !ok {
+			return false
+		}
+		return checkRegex(content, m.Regex, m.Condition, m.CaseInsensitive)
 	case "size":
 		for _, n := range m.Size {
 			if len(data) == n {
@@ -243,6 +256,8 @@ func checkTCPMatcher(m *Matcher, data string) bool {
 			}
 		}
 		return false
+	case "range":
+		return inRange(len(data), m.Min, m.Max)
 	default:
 		return false
 	}

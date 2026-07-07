@@ -488,6 +488,9 @@ func TestValidateTCP(t *testing.T) {
 		{"or condition allowed", &TCPConfig{Port: 6379, MatchersCondition: "or"}, true},
 		{"and condition allowed", &TCPConfig{Port: 6379, MatchersCondition: "and"}, true},
 		{"unknown condition rejected", &TCPConfig{Port: 6379, MatchersCondition: "xor"}, false},
+		{"range matcher source size allowed", &TCPConfig{Port: 6379, Matchers: []Matcher{{Type: "range", Source: "size"}}}, true},
+		{"range matcher source omitted allowed", &TCPConfig{Port: 6379, Matchers: []Matcher{{Type: "range"}}}, true},
+		{"range matcher source status rejected", &TCPConfig{Port: 6379, Matchers: []Matcher{{Type: "range", Source: "status"}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -527,5 +530,47 @@ func TestParseTCPValidation(t *testing.T) {
 	badCond := write("badcond.yaml", "id: bc\ntype: tcp\ntcp:\n  port: 6379\n  matchers-condition: xor\n  matchers:\n    - type: word\n      words: [PONG]\n")
 	if _, err := ParseYAMLModule(badCond); err == nil {
 		t.Fatal("invalid matchers-condition on tcp accepted")
+	}
+
+	goodRange := write("goodrange.yaml", "id: gr\ntype: tcp\ntcp:\n  port: 6379\n  matchers:\n    - type: range\n      min: 1\n      max: 100\n")
+	if _, err := ParseYAMLModule(goodRange); err != nil {
+		t.Fatalf("valid tcp range matcher rejected: %v", err)
+	}
+
+	badRangeStatus := write("badrangestatus.yaml", "id: brs\ntype: tcp\ntcp:\n  port: 6379\n  matchers:\n    - type: range\n      source: status\n      min: 200\n      max: 299\n")
+	if _, err := ParseYAMLModule(badRangeStatus); err == nil {
+		t.Fatal("tcp range matcher with source status accepted")
+	}
+}
+
+func TestExecuteTCPModuleRangeMatch(t *testing.T) {
+	banner := "+OK ready\r\n" // 11 bytes
+	lo, hi := 5, 20
+
+	withFakeTCP(t, banner)
+	def := tcpDef(&TCPConfig{Port: 6379, Matchers: []Matcher{{Type: "range", Min: &lo, Max: &hi}}})
+
+	res, err := ExecuteTCPModule(context.Background(), "example.com", def, Options{})
+	if err != nil {
+		t.Fatalf("ExecuteTCPModule: %v", err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (banner length %d within [%d,%d])", len(res.Findings), len(banner), lo, hi)
+	}
+}
+
+func TestExecuteTCPModuleCaseInsensitiveWord(t *testing.T) {
+	withFakeTCP(t, "+OK REDIS ready\r\n")
+	def := tcpDef(&TCPConfig{
+		Port:     6379,
+		Matchers: []Matcher{{Type: "word", Words: []string{"redis"}, CaseInsensitive: true}},
+	})
+
+	res, err := ExecuteTCPModule(context.Background(), "example.com", def, Options{})
+	if err != nil {
+		t.Fatalf("ExecuteTCPModule: %v", err)
+	}
+	if len(res.Findings) != 1 {
+		t.Fatalf("got %d findings, want 1 (case-insensitive word should hit mixed-case banner)", len(res.Findings))
 	}
 }
