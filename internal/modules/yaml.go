@@ -94,10 +94,11 @@ type DNSConfig struct {
 
 // TCPConfig defines TCP module settings
 type TCPConfig struct {
-	Port       int         `yaml:"port"`
-	Data       string      `yaml:"data,omitempty"`
-	Matchers   []Matcher   `yaml:"matchers"`
-	Extractors []Extractor `yaml:"extractors,omitempty"`
+	Port              int         `yaml:"port"`
+	Data              string      `yaml:"data,omitempty"`
+	Matchers          []Matcher   `yaml:"matchers"`
+	MatchersCondition string      `yaml:"matchers-condition,omitempty"` // and (default), or
+	Extractors        []Extractor `yaml:"extractors,omitempty"`
 }
 
 // ParseYAMLModule parses a YAML file into a module definition
@@ -147,6 +148,11 @@ func ParseYAMLModuleBytes(data []byte) (*YAMLModule, error) {
 	}
 	if ym.DNS != nil {
 		if err := validateDNS(ym.DNS); err != nil {
+			return nil, fmt.Errorf("module %q: %w", ym.ID, err)
+		}
+	}
+	if ym.TCP != nil {
+		if err := validateTCP(ym.TCP); err != nil {
 			return nil, fmt.Errorf("module %q: %w", ym.ID, err)
 		}
 	}
