@@ -17,10 +17,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 
 	"github.com/charmbracelet/log"
 	"github.com/vmfunc/sif/internal/output"
+	"github.com/vmfunc/sif/internal/sifpath"
 )
 
 // builtinFS holds the modules embedded into the binary. it's set once, from the
@@ -45,11 +45,6 @@ type Loader struct {
 // It automatically detects the built-in modules directory and sets up
 // the user modules directory based on the operating system.
 func NewLoader() (*Loader, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, fmt.Errorf("get home dir: %w", err)
-	}
-
 	// Find built-in modules relative to executable
 	execPath, err := os.Executable()
 	if err != nil {
@@ -62,13 +57,10 @@ func NewLoader() (*Loader, error) {
 		builtinDir = "modules"
 	}
 
-	// User modules directory based on OS
-	var userDir string
-	switch runtime.GOOS {
-	case "windows":
-		userDir = filepath.Join(home, "AppData", "Local", "sif", "modules")
-	default:
-		userDir = filepath.Join(home, ".config", "sif", "modules")
+	// User modules directory (can override built-ins)
+	userDir, err := sifpath.UserSubdir("modules")
+	if err != nil {
+		return nil, fmt.Errorf("resolve user modules dir: %w", err)
 	}
 
 	return &Loader{
