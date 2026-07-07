@@ -48,6 +48,7 @@ type App struct {
 	settings *config.Settings
 	targets  []string
 	logFiles []string
+	bridged  map[string]bool // module ids promoted to framework detectors this run; the module loop skips them
 }
 
 // Version is set by main to the resolved build version and shown on the banner.
@@ -332,6 +333,8 @@ func (app *App) Run(ctx context.Context) error {
 		}
 	}
 
+	app.setupDialectBridge()
+
 	results, err := app.scanAllTargets(ctx, storeDir, wantReport)
 	if err != nil {
 		return err
@@ -396,6 +399,31 @@ type targetScan struct {
 	scansRun      []string
 	logFiles      []string
 	apiOutput     string // marshalled UrlResult line, "" unless apiMode and marshalling succeeded
+}
+
+// setupDialectBridge promotes bridgeable fingerprint modules to framework
+// detectors for this run and records their ids, but only when framework
+// detection runs alongside the module engine - the one configuration where a
+// bridged fingerprint would otherwise surface twice. it loads modules once,
+// before the target fan-out, so registration and the id set are established
+// before any scanTarget reads app.bridged.
+func (app *App) setupDialectBridge() {
+	if !app.settings.Framework {
+		return
+	}
+	if !app.settings.AllModules && app.settings.Modules == "" && app.settings.ModuleTags == "" {
+		return
+	}
+	loader, err := modules.NewLoader()
+	if err != nil {
+		log.Warnf("dialect bridge: module loader: %v", err)
+		return
+	}
+	if err := loader.LoadAll(); err != nil {
+		log.Warnf("dialect bridge: loading modules: %v", err)
+	}
+	builtin.Register()
+	app.bridged = modules.BridgeFingerprints()
 }
 
 // scanTarget runs every enabled scanner against a single target and returns
@@ -743,6 +771,12 @@ func (app *App) scanTarget(ctx context.Context, url, storeDir string, wantReport
 			for _, m := range toRun {
 				if ctx.Err() != nil {
 					break
+				}
+				// promoted to a framework detector this run: the framework
+				// engine is the canonical surface, so skip the native module
+				// run to avoid double-surfacing.
+				if app.bridged[m.Info().ID] {
+					continue
 				}
 				switch m.Info().ID {
 				case "nuclei-scan":

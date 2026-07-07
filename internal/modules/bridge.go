@@ -97,16 +97,22 @@ func (d *bridgedDetector) Detect(body string, headers http.Header) (float32, str
 	return confidence, ""
 }
 
-// BridgeFingerprints registers every already-loaded type: fingerprint module
-// as a framework detector where bridgeableToFramework allows it. modules
-// outside that domain are left untouched and keep running only in the module
-// engine; bridging never removes or alters a module's native execution.
-func BridgeFingerprints() {
+// BridgeFingerprints registers every already-loaded bridgeable fingerprint
+// module as a framework detector and returns the set of module ids it
+// bridged. an id is in the returned set iff bridgeFingerprint registered it
+// (iff bridgeableToFramework accepted it), so a caller can skip exactly the
+// modules that were promoted - register and skip can never disagree.
+func BridgeFingerprints() map[string]bool {
+	bridged := make(map[string]bool)
 	for _, m := range ByType(TypeFingerprint) {
 		w, ok := m.(*yamlModuleWrapper)
 		if !ok {
 			continue
 		}
-		bridgeFingerprint(w.definition())
+		def := w.definition()
+		if registered, _ := bridgeFingerprint(def); registered {
+			bridged[def.ID] = true
+		}
 	}
+	return bridged
 }
