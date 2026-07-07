@@ -91,7 +91,7 @@ func (p *Progress) Resume() {
 
 // Done clears the progress bar line
 func (p *Progress) Done() {
-	if apiMode || !IsTTY {
+	if apiMode || !IsTTY || concurrent {
 		return
 	}
 	ClearLine()
@@ -102,8 +102,9 @@ func (p *Progress) render() {
 		return
 	}
 
-	// In non-TTY mode, print progress at milestones only
-	if !IsTTY {
+	// In non-TTY mode, or with several targets sharing the sink, print
+	// progress at milestones only instead of redrawing a live line.
+	if !IsTTY || concurrent {
 		current := atomic.LoadInt64(&p.current)
 		total := p.total
 		if total <= 0 {

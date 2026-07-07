@@ -54,8 +54,9 @@ func (s *Spinner) Start() {
 	s.done = make(chan struct{})
 	s.mu.Unlock()
 
-	// In non-TTY mode, just print the message once
-	if !IsTTY {
+	// In non-TTY mode, or with several targets sharing the sink, just print
+	// the message once instead of animating a line no one else can share.
+	if !IsTTY || concurrent {
 		fmt.Fprintf(sink, "    %s...\n", s.message)
 		return
 	}

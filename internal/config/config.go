@@ -40,6 +40,7 @@ type Settings struct {
 	Git               bool
 	Whois             bool
 	Threads           int
+	Concurrency       int // -concurrency: number of targets scanned in parallel
 	Nuclei            bool
 	JavaScript        bool
 	Timeout           time.Duration
@@ -174,6 +175,7 @@ func registerFlags(settings *Settings) *goflags.FlagSet {
 		flagSet.DurationVar(&settings.MaxTime, "max-time", 0, "Abort the whole run after this duration (0 = no limit)"),
 		flagSet.StringVarP(&settings.LogDir, "log", "l", "", "Directory to store logs in"),
 		flagSet.IntVar(&settings.Threads, "threads", 10, "Number of threads to run scans on"),
+		flagSet.IntVar(&settings.Concurrency, "concurrency", 1, "Number of targets to scan in parallel (>1 interleaves console output)"),
 		flagSet.StringVar(&settings.Template, "template", "", "Load scan settings from a template (preset minimal/recon/full, or a local yaml file)"),
 	)
 
@@ -243,6 +245,10 @@ func Parse() *Settings {
 	// negative value can't panic the waitgroup.
 	if settings.Threads < minThreads {
 		settings.Threads = minThreads
+	}
+
+	if settings.Concurrency < 1 {
+		settings.Concurrency = 1
 	}
 
 	return settings
